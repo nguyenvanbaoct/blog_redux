@@ -1,4 +1,4 @@
-import { addPost, cancleEditingPost, finishEditingPost } from 'pages/blog/blog.reducer'
+import { addPost, cancleEditingPost, finishEditingPost } from 'pages/blog/blog.slice'
 import { Fragment, useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { RootState } from 'store'

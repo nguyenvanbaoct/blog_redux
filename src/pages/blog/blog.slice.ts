@@ -1,14 +1,24 @@
-import { nanoid, createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit'
+import { createSlice, PayloadAction, createAsyncThunk, AsyncThunk } from '@reduxjs/toolkit'
 import { Post } from 'types/blog.type'
 import http from 'utils/http'
+
+type GenericAsyncThunk = AsyncThunk<unknown, unknown, any>
+
+type PendingAction = ReturnType<GenericAsyncThunk['pending']>
+type RejectedAction = ReturnType<GenericAsyncThunk['rejected']>
+type FulfilledAction = ReturnType<GenericAsyncThunk['fulfilled']>
 interface BlogState {
   postList: Post[]
   editingPost: Post | null
+  loading: boolean
+  currentRequestId: undefined | string
 }
 
 const initialState: BlogState = {
   postList: [],
-  editingPost: null
+  editingPost: null,
+  loading: false,
+  currentRequestId: undefined
 }
 
 export const getPostList = createAsyncThunk('blog/getPostList', async (_, thunkAPI) => {
@@ -19,19 +29,33 @@ export const getPostList = createAsyncThunk('blog/getPostList', async (_, thunkA
 })
 
 export const addPost = createAsyncThunk('blog/addPost', async (body: Omit<Post, 'id'>, thunkAPI) => {
-  const response = await http.post<Post>('posts', body, {
-    signal: thunkAPI.signal
-  })
-  return response.data
+  try {
+    const response = await http.post<Post>('posts', body, {
+      signal: thunkAPI.signal
+    })
+    return response.data
+  } catch (err: any) {
+    if (err.name === 'AxiosError' && err.response.status === 422) {
+      return thunkAPI.rejectWithValue(err.response.data)
+    }
+    throw err
+  }
 })
 
 export const updatePost = createAsyncThunk(
   'blog/updatePost',
   async ({ postId, body }: { postId: string; body: Post }, thunkAPI) => {
-    const response = await http.put<Post>(`posts/${postId}`, body, {
-      signal: thunkAPI.signal
-    })
-    return response.data
+    try {
+      const response = await http.put<Post>(`posts/${postId}`, body, {
+        signal: thunkAPI.signal
+      })
+      return response.data
+    } catch (err: any) {
+      if (err.name === 'AxiosError' && err.response.status === 422) {
+        return thunkAPI.rejectWithValue(err.response.data)
+      }
+      throw err
+    }
   }
 )
 
@@ -80,6 +104,22 @@ const blogSlice = createSlice({
           state.postList.splice(deletePostIndex, 1)
         }
       })
+      .addMatcher<PendingAction>(
+        (action) => action.type.endsWith('/pending'),
+        (state, action) => {
+          state.loading = true
+          state.currentRequestId = action.meta.requestId
+        }
+      )
+      .addMatcher<RejectedAction | FulfilledAction>(
+        (action) => action.type.endsWith('/rejected') || action.type.endsWith('/fulfilled'),
+        (state, action) => {
+          if (state.loading && state.currentRequestId === action.meta.requestId) {
+            state.loading = false
+            state.currentRequestId = undefined
+          }
+        }
+      )
   }
 })
 
